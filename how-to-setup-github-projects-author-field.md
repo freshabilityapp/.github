@@ -62,7 +62,7 @@ missed (missed webhook, Actions outage, workflow disabled).
 - Write access to the project board.
 - Push access to [`freshabilityapp/.github`](https://github.com/freshabilityapp/.github),
   the org's shared repo (already created, public).
-- Python 3.9+ with `requests` for the backfill.
+- Python 3.9+ for the backfill (Step 3 creates a `.venv` and installs `requests`).
 - The project number, from its URL: `https://github.com/orgs/freshabilityapp/projects/<N>`.
 
 ---
@@ -96,7 +96,6 @@ new hires).
 Apart from `External`, you can skip seeding options entirely and let Step 3's
 `--create-missing-options` generate them from the issues already on the board.
 
----
 
 ## Step 2 — Create the token and org secret
 
@@ -105,9 +104,18 @@ Apart from `External`, you can skip seeding options entirely and let Step 3's
 1. Create a **fine-grained PAT** (Settings → Developer settings → Personal access
    tokens → Fine-grained):
    - **Resource owner:** `freshabilityapp`
+   - **Repository access:** **All repositories** — covers current *and future*
+     repos, so a new repo joining the board never breaks the workflows or the
+     weekly cron. (Tighter alternative: *Only select repositories* with every
+     repo that feeds the project — but then every new repo needs a token edit,
+     and a missed one fails the backfill with
+     `Resource not accessible by personal access token`.)
    - **Organization permissions:** Projects → **Read and write**
-   - **Repository permissions:** Issues → **Read-only** (select all repos that feed
-     the project)
+   - **Repository permissions:** Issues → **Read-only**, and Pull requests →
+     **Read-only** (Metadata → Read-only is added automatically). The PR
+     permission matters even though only issues get the field: if the board
+     contains *any* PR items, scanning their content without it fails with
+     `Resource not accessible by personal access token`.
    - Set an expiry you'll actually remember to rotate.
 
 2. Add it as an **organization secret** named `PROJECTS_CREATED_BY_PAT`
@@ -119,18 +127,28 @@ Apart from `External`, you can skip seeding options entirely and let Step 3's
 An org secret means you add the token once, not once per repo — and rotation is a
 single edit.
 
----
+![Dialog modal for adding new PAT](/images/new-personal-access-token-dialog-modal.png)
+
 
 ## Step 3 — Backfill existing issues
 
 Dry run first. Nothing is written without `--apply`.
 
+Set up a virtual environment so `requests` doesn't land in your system Python
+(`.venv` is already in `.gitignore`):
+
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install requests
+
 export GITHUB_TOKEN=github_pat_...   # the PAT from Step 2
 
 python backfill_project_author.py --owner freshabilityapp --project N
 ```
+
+The remaining commands in this step assume the `.venv` is still active. If you
+come back in a new shell later, just re-run `source .venv/bin/activate`.
 
 Read the summary. It lists every author login on the board that has **no matching
 option** — these are the issues that would be silently skipped. Two ways to resolve:

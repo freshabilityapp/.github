@@ -59,7 +59,16 @@ def gql(session: requests.Session, query: str, variables: dict[str, Any]) -> dic
         payload = resp.json()
 
         if "errors" in payload:
-            raise GraphQLError("; ".join(e.get("message", str(e)) for e in payload["errors"]))
+            errors = payload["errors"]
+            data = payload.get("data")
+            # Partial response: some board items reference content this token
+            # can't see (e.g. PR items when the PAT only has Issues access).
+            # GraphQL nulls just those nodes' content — keep the rest.
+            if data is not None and all(e.get("type") == "FORBIDDEN" for e in errors):
+                print(f"  warning: {len(errors)} item(s) reference content this token "
+                      "cannot access; skipping them", file=sys.stderr)
+                return data
+            raise GraphQLError("; ".join(e.get("message", str(e)) for e in errors))
         return payload["data"]
 
     raise GraphQLError("giving up after 5 attempts")
