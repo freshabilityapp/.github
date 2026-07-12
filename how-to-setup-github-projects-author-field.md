@@ -110,7 +110,7 @@ Apart from `External`, you can skip seeding options entirely and let Step 3's
      the project)
    - Set an expiry you'll actually remember to rotate.
 
-2. Add it as an **organization secret** named `PROJECTS_PAT`
+2. Add it as an **organization secret** named `PROJECTS_CREATED_BY_PAT`
    (Org → Settings → Secrets and variables → Actions → New organization secret).
    Grant it to the repos whose issues land on the project, **plus the
    [`freshabilityapp/.github`](https://github.com/freshabilityapp/.github) repo
@@ -220,7 +220,7 @@ freshabilityapp organization"*, or every caller would fail with a misleading
 "workflow not found".)
 
 Publishing this file publicly is safe: it contains no credentials, only a *reference*
-to `secrets.PROJECTS_PAT`, which is resolved at run time from the calling repo.
+to `secrets.PROJECTS_CREATED_BY_PAT`, which is resolved at run time from the calling repo.
 
 No caller exists yet, so the event workflow won't fire. The cron *will* start
 running on schedule — that's fine, it's the same idempotent backfill you already
@@ -248,7 +248,7 @@ jobs:
       field-name: Created By      # "Author" is a reserved field name in Projects
       fallback-option: External   # catch-all; the weekly cron reassigns later
     secrets:
-      projects-token: ${{ secrets.PROJECTS_PAT }}
+      projects-token: ${{ secrets.PROJECTS_CREATED_BY_PAT }}
 ```
 
 Roll out to **one repo first**. Open a throwaway issue, confirm the Created By
@@ -282,7 +282,7 @@ Nothing here is destructive to issues — the field lives on the project item on
 2. Delete `backfill-project-author.yml` from `freshabilityapp/.github`
    (stops the weekly cron).
 3. Delete the `Created By` field in the project settings (removes all values at once).
-4. Revoke the PAT and delete the `PROJECTS_PAT` org secret.
+4. Revoke the PAT and delete the `PROJECTS_CREATED_BY_PAT` org secret.
 
 ---
 

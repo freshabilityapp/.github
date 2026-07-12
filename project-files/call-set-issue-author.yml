@@ -21,4 +21,4 @@ jobs:
                                   # backfill cron reassigns these to the real
                                   # login once an option exists
     secrets:
-      projects-token: ${{ secrets.PROJECTS_PAT }}   # org-level secret
+      projects-token: ${{ secrets.PROJECTS_CREATED_BY_PAT }}   # org-level secret

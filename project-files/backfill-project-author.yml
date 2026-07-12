@@ -36,7 +36,7 @@ jobs:
 
       - name: Backfill Created By field
         env:
-          GITHUB_TOKEN: ${{ secrets.PROJECTS_PAT }}   # org secret — must be granted to this repo
+          GITHUB_TOKEN: ${{ secrets.PROJECTS_CREATED_BY_PAT }}   # org secret — must be granted to this repo
         run: |
           python scripts/backfill_project_author.py \
             --owner freshabilityapp \
