@@ -1,0 +1,22 @@
+# Place in EVERY repo whose issues land on the project:
+#   .github/workflows/project-author.yml
+#
+# This is the only file that needs to be copied around. All logic lives in the
+# reusable workflow in freshabilityapp/.github.
+
+name: Project author field
+
+on:
+  issues:
+    types: [opened, transferred, reopened]
+
+jobs:
+  set-author:
+    uses: freshabilityapp/.github/.github/workflows/set-issue-author.yml@main
+    with:
+      project-owner: freshabilityapp
+      project-number: 1           # <-- from the project URL
+      field-name: Author
+      # fallback-option: External # optional: catch-all for unmapped logins
+    secrets:
+      projects-token: ${{ secrets.PROJECTS_PAT }}   # org-level secret

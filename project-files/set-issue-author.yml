@@ -1,0 +1,127 @@
+# Place in: freshabilityapp/.github  →  .github/workflows/set-issue-author.yml
+#
+# Reusable workflow. Sets a single-select "Author" field on the issue's
+# GitHub Project v2 item, working around the lack of a native author filter.
+#
+# Called by a thin caller workflow in each repo (see call-set-issue-author.yml).
+
+name: Set Author field on project item
+
+on:
+  workflow_call:
+    inputs:
+      project-owner:
+        description: Org login that owns the project (e.g. freshabilityapp)
+        type: string
+        required: true
+      project-number:
+        description: Project number from the project URL
+        type: number
+        required: true
+      field-name:
+        description: Name of the single-select field
+        type: string
+        default: Author
+      fallback-option:
+        description: Option name to use when the author has no matching option (e.g. "External"). Empty = skip.
+        type: string
+        default: ''
+    secrets:
+      projects-token:
+        description: Fine-grained PAT — org Projects read/write, repo Issues read
+        required: true
+
+jobs:
+  set-author:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Set Author on project item
+        env:
+          GH_TOKEN: ${{ secrets.projects-token }}
+          PROJECT_OWNER: ${{ inputs.project-owner }}
+          PROJECT_NUMBER: ${{ inputs.project-number }}
+          FIELD_NAME: ${{ inputs.field-name }}
+          FALLBACK_OPTION: ${{ inputs.fallback-option }}
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+          AUTHOR_LOGIN: ${{ github.event.issue.user.login }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+
+          # 1. Resolve the project ID, the field ID, and its option list.
+          FIELD_JSON=$(gh api graphql \
+            -f query='
+              query($owner: String!, $number: Int!, $field: String!) {
+                organization(login: $owner) {
+                  projectV2(number: $number) {
+                    id
+                    field(name: $field) {
+                      ... on ProjectV2SingleSelectField {
+                        id
+                        options { id name }
+                      }
+                    }
+                  }
+                }
+              }' \
+            -f owner="$PROJECT_OWNER" \
+            -F number="$PROJECT_NUMBER" \
+            -f field="$FIELD_NAME" \
+            --jq '.data.organization.projectV2')
+
+          PROJECT_ID=$(jq -r '.id' <<< "$FIELD_JSON")
+          FIELD_ID=$(jq -r '.field.id // empty' <<< "$FIELD_JSON")
+
+          if [ -z "$FIELD_ID" ]; then
+            echo "::error::No single-select field named '$FIELD_NAME' on project $PROJECT_OWNER/$PROJECT_NUMBER"
+            exit 1
+          fi
+
+          # 2. Map the author's login to an option ID (fall back if configured).
+          OPTION_ID=$(jq -r --arg login "$AUTHOR_LOGIN" \
+            '.field.options[] | select(.name == $login) | .id' <<< "$FIELD_JSON")
+
+          if [ -z "$OPTION_ID" ] && [ -n "$FALLBACK_OPTION" ]; then
+            OPTION_ID=$(jq -r --arg name "$FALLBACK_OPTION" \
+              '.field.options[] | select(.name == $name) | .id' <<< "$FIELD_JSON")
+            echo "::notice::No option for '$AUTHOR_LOGIN'; using fallback '$FALLBACK_OPTION'."
+          fi
+
+          if [ -z "$OPTION_ID" ]; then
+            echo "::warning::No '$FIELD_NAME' option matches '$AUTHOR_LOGIN' (issue #$ISSUE_NUMBER). Add the option to the project field, then re-run the backfill script."
+            exit 0   # Don't fail the run — an unmappable author is expected, not broken.
+          fi
+
+          # 3. Add the issue to the project. Idempotent: returns the existing
+          #    item if the project's built-in auto-add already created it.
+          ITEM_ID=$(gh api graphql \
+            -f query='
+              mutation($project: ID!, $content: ID!) {
+                addProjectV2ItemById(input: { projectId: $project, contentId: $content }) {
+                  item { id }
+                }
+              }' \
+            -f project="$PROJECT_ID" \
+            -f content="$ISSUE_NODE_ID" \
+            --jq '.data.addProjectV2ItemById.item.id')
+
+          # 4. Set the field value.
+          gh api graphql \
+            -f query='
+              mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $project
+                  itemId: $item
+                  fieldId: $field
+                  value: { singleSelectOptionId: $option }
+                }) {
+                  projectV2Item { id }
+                }
+              }' \
+            -f project="$PROJECT_ID" \
+            -f item="$ITEM_ID" \
+            -f field="$FIELD_ID" \
+            -f option="$OPTION_ID" > /dev/null
+
+          echo "Set $FIELD_NAME='$AUTHOR_LOGIN' on issue #$ISSUE_NUMBER (item $ITEM_ID)."
