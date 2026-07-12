@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Backfill an "Author" single-select field on a GitHub Projects v2 board.
+Backfill a "Created By" single-select field on a GitHub Projects v2 board.
 
-GitHub Projects has no native author/created-by filter. The workaround is a
-custom field populated from the issue's author. A workflow handles new issues;
-this script handles everything already on the board.
+GitHub Projects has no native author/created-by filter (and reserves "Author"
+as a field name). The workaround is a custom field populated from the issue's
+author. A workflow handles new issues; this script handles everything already
+on the board.
 
 Dry-run by default. Nothing is written unless you pass --apply.
 
@@ -188,7 +189,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--owner", required=True, help="Org login that owns the project")
     ap.add_argument("--project", type=int, required=True, help="Project number from its URL")
-    ap.add_argument("--field", default="Author", help="Single-select field name (default: Author)")
+    ap.add_argument("--field", default="Created By",
+                    help='Single-select field name (default: "Created By" — "Author" is reserved by GitHub)')
     ap.add_argument("--apply", action="store_true", help="Actually write. Omit for a dry run.")
     ap.add_argument("--force", action="store_true", help="Overwrite items that already have a value")
     ap.add_argument("--create-missing-options", action="store_true",

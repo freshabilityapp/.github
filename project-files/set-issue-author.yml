@@ -1,11 +1,12 @@
 # Place in: freshabilityapp/.github  →  .github/workflows/set-issue-author.yml
 #
-# Reusable workflow. Sets a single-select "Author" field on the issue's
+# Reusable workflow. Sets a single-select "Created By" field on the issue's
 # GitHub Project v2 item, working around the lack of a native author filter.
+# (The obvious name "Author" is a reserved field name in Projects v2.)
 #
 # Called by a thin caller workflow in each repo (see call-set-issue-author.yml).
 
-name: Set Author field on project item
+name: Set Created By field on project item
 
 on:
   workflow_call:
@@ -19,9 +20,9 @@ on:
         type: number
         required: true
       field-name:
-        description: Name of the single-select field
+        description: Name of the single-select field ("Author" is reserved by GitHub)
         type: string
-        default: Author
+        default: Created By
       fallback-option:
         description: Option name to use when the author has no matching option (e.g. "External"). Empty = skip.
         type: string
@@ -36,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Set Author on project item
+      - name: Set Created By on project item
         env:
           GH_TOKEN: ${{ secrets.projects-token }}
           PROJECT_OWNER: ${{ inputs.project-owner }}

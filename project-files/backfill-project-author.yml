@@ -3,10 +3,10 @@
 # Scheduled safety net for the event-driven workflow (set-issue-author.yml).
 # Runs the backfill script weekly with:
 #   --create-missing-options : new authors on the board get an option automatically
-#   --force                  : re-derives every item's Author from ground truth, so
-#                              items the event workflow bucketed into "External"
-#                              (unmapped login at the time) get reassigned to the
-#                              real login once their option exists.
+#   --force                  : re-derives every item's Created By from ground
+#                              truth, so items the event workflow bucketed into
+#                              "External" (unmapped login at the time) get
+#                              reassigned to the real login once their option exists.
 #
 # --force rewrites the field on every item each run. That's intentional — the
 # issue author never changes, so it can only converge — but it costs one
@@ -14,7 +14,7 @@
 #
 # Assumes backfill_project_author.py is committed to this repo at scripts/.
 
-name: Backfill project Author field
+name: Backfill project Created By field
 
 on:
   workflow_dispatch:        # manual repair runs
@@ -34,13 +34,14 @@ jobs:
 
       - run: pip install requests
 
-      - name: Backfill Author field
+      - name: Backfill Created By field
         env:
           GITHUB_TOKEN: ${{ secrets.PROJECTS_PAT }}   # org secret — must be granted to this repo
         run: |
           python scripts/backfill_project_author.py \
             --owner freshabilityapp \
             --project 1 \
+            --field 'Created By' \
             --create-missing-options \
             --force \
             --apply

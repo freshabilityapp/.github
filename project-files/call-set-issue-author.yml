@@ -4,7 +4,7 @@
 # This is the only file that needs to be copied around. All logic lives in the
 # reusable workflow in freshabilityapp/.github.
 
-name: Project author field
+name: Project Created By field
 
 on:
   issues:
@@ -16,7 +16,7 @@ jobs:
     with:
       project-owner: freshabilityapp
       project-number: 1           # <-- from the project URL
-      field-name: Author
+      field-name: Created By        # "Author" is a reserved field name in Projects
       fallback-option: External   # catch-all for unmapped logins; the weekly
                                   # backfill cron reassigns these to the real
                                   # login once an option exists

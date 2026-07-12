@@ -9,9 +9,10 @@ and a regression from classic Projects:
 - [community#9424 — Editable 'author' or 'created by' field](https://github.com/orgs/community/discussions/9424)
 - [community#180965 — Filter issues by owner in Projects](https://github.com/orgs/community/discussions/180965)
 
-**The workaround:** add a custom single-select field named `Author` and populate it
-from the issue's author. Custom fields *are* filterable, so this restores
-`Author: ken` style filtering, grouping, and slicing in project views.
+**The workaround:** add a custom single-select field named `Created By` and
+populate it from the issue's author. (`Author` would be the obvious name, but
+GitHub reserves it — see Step 1.) Custom fields *are* filterable, so this restores
+`created-by:kenwalters` style filtering, grouping, and slicing in project views.
 
 **Prior art check:** no off-the-shelf action does this. `actions/add-to-project`
 (official) adds items but cannot set field values
@@ -40,8 +41,8 @@ The script does the one-time backfill (Step 3), then keeps running as the weekly
 cron. Together with the `External` fallback in the callers, this makes the system
 self-healing: an author with no matching option gets bucketed into `External` by
 the event workflow, and the next cron run creates their option and reassigns them
-(`--force` re-derives every item's Author from ground truth — safe, because the
-issue author never changes). The same run repairs anything the event workflow
+(`--force` re-derives every item's Created By from ground truth — safe, because
+the issue author never changes). The same run repairs anything the event workflow
 missed (missed webhook, Actions outage, workflow disabled).
 
 ### Files
@@ -66,12 +67,18 @@ missed (missed webhook, Actions outage, workflow disabled).
 
 ---
 
-## Step 1 — Create the `Author` field
+## Step 1 — Create the `Created By` field
 
 In the project → **Settings** → **+ New field**:
 
-- **Name:** `Author` (exact — the workflow and script look it up by name)
+- **Name:** `Created By` (exact — the workflow and script look it up by name)
 - **Type:** Single select
+
+> **Why not "Author"?** GitHub rejects it: *"This field name is a reserved word"*
+> (presumably held back for a future native field — see the discussions linked at
+> the top). `Created By` is the fallback name used throughout this setup. If you
+> pick something else, it must match `field-name` in every caller workflow and
+> `--field` in the backfill cron.
 
 Add one option per team member, named with their **GitHub login** (not their display
 name — the workflow matches on `github.event.issue.user.login`).
@@ -154,11 +161,12 @@ Useful flags:
 | Flag | Effect |
 |---|---|
 | `--apply` | Actually write (default is dry run) |
-| `--force` | Overwrite items that already have an Author value |
-| `--field NAME` | Use a field name other than `Author` |
+| `--force` | Overwrite items that already have a Created By value |
+| `--field NAME` | Use a field name other than `Created By` |
 | `--create-missing-options` | Auto-add options for unmapped logins (see warning above) |
 
-**Verify:** open the project, group by `Author`. Every issue should be accounted for.
+**Verify:** open the project, group by `Created By`. Every issue should be
+accounted for.
 
 This is the only manual run you should ever need — after Step 4, the scheduled
 workflow repeats it weekly (with `--create-missing-options --force`).
@@ -190,7 +198,7 @@ mkdir -p .github/workflows scripts
 cp /path/to/set-issue-author.yml /path/to/backfill-project-author.yml .github/workflows/
 cp /path/to/backfill_project_author.py scripts/
 git add .github/workflows scripts
-git commit -m "Add Author-field workflows: event-driven set + weekly backfill"
+git commit -m "Add Created By field workflows: event-driven set + weekly backfill"
 git push origin main
 ```
 
@@ -199,7 +207,7 @@ Before pushing, set the real project number in `backfill-project-author.yml`
 if weekly is too slow a ceiling for new-hire reassignment. You can also trigger
 it any time from the Actions tab (`workflow_dispatch`).
 
-> The cron runs with `--force`, which rewrites the Author on **every** item each
+> The cron runs with `--force`, which rewrites the Created By on **every** item each
 > week — intentional, so items parked in `External` get reassigned once their
 > option exists, and any drift is repaired. The author of an issue never changes,
 > so this can only converge. Cost: one mutation per board item per run — fine for
@@ -225,7 +233,7 @@ ran by hand in Step 3.
 In each repo whose issues land on the project, add `.github/workflows/project-author.yml`:
 
 ```yaml
-name: Project author field
+name: Project Created By field
 
 on:
   issues:
@@ -237,14 +245,14 @@ jobs:
     with:
       project-owner: freshabilityapp
       project-number: 1           # <-- your project number
-      field-name: Author
+      field-name: Created By      # "Author" is a reserved field name in Projects
       fallback-option: External   # catch-all; the weekly cron reassigns later
     secrets:
       projects-token: ${{ secrets.PROJECTS_PAT }}
 ```
 
-Roll out to **one repo first**. Open a throwaway issue, confirm the Author field
-populates, then propagate.
+Roll out to **one repo first**. Open a throwaway issue, confirm the Created By
+field populates, then propagate.
 
 **Why `addProjectV2ItemById` and not a lookup:** on `issues: opened` there's a race
 between our workflow and the project's built-in auto-add. Reading `projectItems` can
@@ -255,12 +263,12 @@ if one is already there — so it sidesteps the race entirely.
 
 ## Verification
 
-- [ ] Open a test issue in a wired-up repo → Author populates within ~30s
-- [ ] Project view → filter `Author: <your login>` returns it
-- [ ] Group by `Author` → no unexpected "No Author" bucket
+- [ ] Open a test issue in a wired-up repo → Created By populates within ~30s
+- [ ] Project view → filter `created-by:<your login>` returns it
+- [ ] Group by `Created By` → no unexpected "No Created By" bucket
 - [ ] Open an issue as someone with no matching option → workflow **succeeds**,
       item gets `External` (notice in the run log, not a failure)
-- [ ] Trigger `Backfill project Author field` from the Actions tab
+- [ ] Trigger `Backfill project Created By field` from the Actions tab
       (`workflow_dispatch`) → run succeeds; the `External` item from the previous
       check is reassigned to the real login (option auto-created)
 
@@ -273,7 +281,7 @@ Nothing here is destructive to issues — the field lives on the project item on
 1. Delete the caller workflow from each repo (stops new writes).
 2. Delete `backfill-project-author.yml` from `freshabilityapp/.github`
    (stops the weekly cron).
-3. Delete the `Author` field in the project settings (removes all values at once).
+3. Delete the `Created By` field in the project settings (removes all values at once).
 4. Revoke the PAT and delete the `PROJECTS_PAT` org secret.
 
 ---
@@ -283,7 +291,7 @@ Nothing here is destructive to issues — the field lives on the project item on
 | Situation | Action |
 |---|---|
 | New team member | Nothing — their issues land in `External`, and the next weekly cron creates their option and reassigns them. Add the option manually only if a week is too long to wait |
-| Issues missing/wrong Author (missed webhook, outage) | Nothing — the weekly cron repairs them (`--force`). To fix immediately, trigger `Backfill project Author field` from the Actions tab |
+| Issues missing/wrong Created By (missed webhook, outage) | Nothing — the weekly cron repairs them (`--force`). To fix immediately, trigger `Backfill project Created By field` from the Actions tab |
 | New repo added to the project | Copy in the caller workflow; grant it the org secret |
 | PAT expiry | Rotate the token, update the org secret — single edit. If the cron starts failing, this is the first thing to check |
 
