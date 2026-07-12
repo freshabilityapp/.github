@@ -258,8 +258,11 @@ if one is already there — so it sidesteps the race entirely.
 - [ ] Open a test issue in a wired-up repo → Author populates within ~30s
 - [ ] Project view → filter `Author: <your login>` returns it
 - [ ] Group by `Author` → no unexpected "No Author" bucket
-- [ ] Open an issue as someone with no matching option → workflow **succeeds** with
-      a warning in the run log (does not fail the run)
+- [ ] Open an issue as someone with no matching option → workflow **succeeds**,
+      item gets `External` (notice in the run log, not a failure)
+- [ ] Trigger `Backfill project Author field` from the Actions tab
+      (`workflow_dispatch`) → run succeeds; the `External` item from the previous
+      check is reassigned to the real login (option auto-created)
 
 ---
 
@@ -268,8 +271,10 @@ if one is already there — so it sidesteps the race entirely.
 Nothing here is destructive to issues — the field lives on the project item only.
 
 1. Delete the caller workflow from each repo (stops new writes).
-2. Delete the `Author` field in the project settings (removes all values at once).
-3. Revoke the PAT and delete the `PROJECTS_PAT` org secret.
+2. Delete `backfill-project-author.yml` from `freshabilityapp/.github`
+   (stops the weekly cron).
+3. Delete the `Author` field in the project settings (removes all values at once).
+4. Revoke the PAT and delete the `PROJECTS_PAT` org secret.
 
 ---
 
@@ -277,14 +282,14 @@ Nothing here is destructive to issues — the field lives on the project item on
 
 | Situation | Action |
 |---|---|
-| New team member | Add their login as an option in the project field |
-| Issues missing an Author (missed webhook, outage) | Re-run the backfill script — it only touches empty items |
+| New team member | Nothing — their issues land in `External`, and the next weekly cron creates their option and reassigns them. Add the option manually only if a week is too long to wait |
+| Issues missing/wrong Author (missed webhook, outage) | Nothing — the weekly cron repairs them (`--force`). To fix immediately, trigger `Backfill project Author field` from the Actions tab |
 | New repo added to the project | Copy in the caller workflow; grant it the org secret |
-| PAT expiry | Rotate the token, update the org secret — single edit |
+| PAT expiry | Rotate the token, update the org secret — single edit. If the cron starts failing, this is the first thing to check |
 
-Consider registering the backfill script as a `workflow_dispatch` job (or a monthly
-cron) rather than treating it as a throwaway. It's the safety net for the
-event-driven half.
+The scheduled backfill is the safety net for the event-driven half — if it's ever
+noisy or misbehaving, disable the workflow in the Actions tab rather than deleting
+it, and fall back to manual `workflow_dispatch` runs.
 
 ## Watch for
 
