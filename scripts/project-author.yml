@@ -1,8 +1,9 @@
-# Place in EVERY repo whose issues land on the project:
+# TEMPLATE — copy into EVERY repo whose issues land on the project, at:
 #   .github/workflows/project-author.yml
 #
-# This is the only file that needs to be copied around. All logic lives in the
-# reusable workflow in freshabilityapp/.github.
+# It lives in scripts/ (not .github/workflows/) so it does not run in this
+# repo. This is the only file that needs to be copied around; all logic lives
+# in the reusable workflow (.github/workflows/set-issue-author.yml).
 
 name: Project Created By field
 
@@ -15,7 +16,7 @@ jobs:
     uses: freshabilityapp/.github/.github/workflows/set-issue-author.yml@main
     with:
       project-owner: freshabilityapp
-      project-number: 1           # <-- from the project URL
+      project-number: 18          # <-- from the project URL
       field-name: Created By        # "Author" is a reserved field name in Projects
       fallback-option: External   # catch-all for unmapped logins; the weekly
                                   # backfill cron reassigns these to the real

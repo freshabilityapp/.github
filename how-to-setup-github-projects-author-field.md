@@ -47,12 +47,15 @@ missed (missed webhook, Actions outage, workflow disabled).
 
 ### Files
 
-| File | Destination |
+All four live in [`freshabilityapp/.github`](https://github.com/freshabilityapp/.github),
+the org's shared repo (public):
+
+| File (in this repo) | Role |
 |---|---|
-| `set-issue-author.yml` | [`freshabilityapp/.github`](https://github.com/freshabilityapp/.github) (public, org shared repo) → `.github/workflows/set-issue-author.yml` |
-| `backfill-project-author.yml` | [`freshabilityapp/.github`](https://github.com/freshabilityapp/.github) → `.github/workflows/backfill-project-author.yml` |
-| `call-set-issue-author.yml` | Each repo → `.github/workflows/project-author.yml` |
-| `backfill_project_author.py` | [`freshabilityapp/.github`](https://github.com/freshabilityapp/.github) → `scripts/backfill_project_author.py` (run by the cron; also runnable locally) |
+| `.github/workflows/set-issue-author.yml` | Reusable event workflow — called by every repo |
+| `.github/workflows/backfill-project-author.yml` | Weekly cron + `workflow_dispatch` backfill |
+| `scripts/project-author.yml` | **Template** — copy to each repo as `.github/workflows/project-author.yml` (Step 5). Lives outside `.github/workflows/` so it doesn't run here |
+| `scripts/backfill_project_author.py` | Backfill script (run by the cron; also runnable locally) |
 
 ---
 
@@ -197,31 +200,22 @@ The org's shared repo — [`freshabilityapp/.github`](https://github.com/freshab
 — exists and is **public**. This is GitHub's convention for org-wide defaults: shared
 workflows, issue templates, `CONTRIBUTING.md`, the org profile README.
 
-Commit three files there:
+The files are already laid out in this repo (see the Files table) — deploying is
+committing and pushing them:
 
-```
-.github/workflows/set-issue-author.yml        # reusable event workflow
-.github/workflows/backfill-project-author.yml # weekly cron + workflow_dispatch
-scripts/backfill_project_author.py            # the script the cron runs
+```bash
+git add .github/workflows scripts
+git commit -m "Add Created By field workflows: event-driven set + weekly backfill"
+git push origin main
 ```
 
 Yes, the path doubles up — the *repo* is named `.github`, and workflows still live in
 a `.github/workflows/` *directory* inside it. That's why callers reference
 `freshabilityapp/.github/.github/workflows/set-issue-author.yml@main`.
 
-```bash
-git clone https://github.com/freshabilityapp/.github.git freshability-dotgithub
-cd freshability-dotgithub
-mkdir -p .github/workflows scripts
-cp /path/to/set-issue-author.yml /path/to/backfill-project-author.yml .github/workflows/
-cp /path/to/backfill_project_author.py scripts/
-git add .github/workflows scripts
-git commit -m "Add Created By field workflows: event-driven set + weekly backfill"
-git push origin main
-```
-
-Before pushing, set the real project number in `backfill-project-author.yml`
-(the `--project` flag). The cron fires Mondays 06:17 UTC; adjust the schedule
+Before pushing, confirm the real project number in both
+`.github/workflows/backfill-project-author.yml` (the `--project` flag) and the
+`scripts/project-author.yml` template (`project-number`). The cron fires Mondays 06:17 UTC; adjust the schedule
 if weekly is too slow a ceiling for new-hire reassignment. You can also trigger
 it any time from the Actions tab (`workflow_dispatch`).
 
@@ -248,7 +242,8 @@ ran by hand in Step 3.
 
 ## Step 5 — Wire up each repo
 
-In each repo whose issues land on the project, add `.github/workflows/project-author.yml`:
+In each repo whose issues land on the project, copy the template
+`scripts/project-author.yml` to `.github/workflows/project-author.yml`:
 
 ```yaml
 name: Project Created By field
@@ -262,7 +257,7 @@ jobs:
     uses: freshabilityapp/.github/.github/workflows/set-issue-author.yml@main
     with:
       project-owner: freshabilityapp
-      project-number: 1           # <-- your project number
+      project-number: 18          # <-- your project number
       field-name: Created By      # "Author" is a reserved field name in Projects
       fallback-option: External   # catch-all; the weekly cron reassigns later
     secrets:
