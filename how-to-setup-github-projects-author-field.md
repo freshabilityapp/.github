@@ -25,27 +25,33 @@ so we own it rather than take the dependency.
 
 ## Architecture
 
-Two halves, both hitting the same GraphQL mutation (`updateProjectV2ItemFieldValue`):
+Three pieces, all hitting the same GraphQL mutation (`updateProjectV2ItemFieldValue`):
 
 | | Covers | Mechanism |
 |---|---|---|
 | **Reusable workflow** | New issues, going forward | `issues: [opened, transferred, reopened]` → set field |
 | **Python script** | Every issue already on the board | Paginate items → set field |
+| **Scheduled backfill** | Drift: new members, missed events | Weekly cron runs the script with `--create-missing-options --force` |
 
-The workflow lives once in `freshabilityapp/.github` and is called by an 8-line
-caller in each repo. Fix the logic once; every repo inherits it.
+The event workflow lives once in `freshabilityapp/.github` and is called by an
+8-line caller in each repo. Fix the logic once; every repo inherits it.
 
-The script is **idempotent** — it skips items that already have a value. It's the
-one-time backfill, but it's also the repair tool if the event workflow ever misses
-an issue (missed webhook, Actions outage, workflow disabled). Keep it around.
+The script does the one-time backfill (Step 3), then keeps running as the weekly
+cron. Together with the `External` fallback in the callers, this makes the system
+self-healing: an author with no matching option gets bucketed into `External` by
+the event workflow, and the next cron run creates their option and reassigns them
+(`--force` re-derives every item's Author from ground truth — safe, because the
+issue author never changes). The same run repairs anything the event workflow
+missed (missed webhook, Actions outage, workflow disabled).
 
 ### Files
 
 | File | Destination |
 |---|---|
 | `set-issue-author.yml` | [`freshabilityapp/.github`](https://github.com/freshabilityapp/.github) (public, org shared repo) → `.github/workflows/set-issue-author.yml` |
+| `backfill-project-author.yml` | [`freshabilityapp/.github`](https://github.com/freshabilityapp/.github) → `.github/workflows/backfill-project-author.yml` |
 | `call-set-issue-author.yml` | Each repo → `.github/workflows/project-author.yml` |
-| `backfill_project_author.py` | Run locally (or as a `workflow_dispatch` job) |
+| `backfill_project_author.py` | [`freshabilityapp/.github`](https://github.com/freshabilityapp/.github) → `scripts/backfill_project_author.py` (run by the cron; also runnable locally) |
 
 ---
 
@@ -70,16 +76,18 @@ In the project → **Settings** → **+ New field**:
 Add one option per team member, named with their **GitHub login** (not their display
 name — the workflow matches on `github.event.issue.user.login`).
 
-Optionally add a catch-all option like `External` for contributors and bots.
+Add a catch-all option named **`External`** — the caller workflows use it as the
+`fallback-option` for any author with no matching option (contributors, bots,
+new hires).
 
 > **The single-select tradeoff:** it's a closed vocabulary. A new hire opens an
-> issue, no option matches their login, and the item silently gets no Author. Both
-> the workflow and the script surface this as a warning rather than failing — but
-> you have to act on it. If your contributor set is open-ended, a Text field would
-> be more robust at the cost of dropdown/grouping UX.
+> issue and no option matches their login. The `External` fallback plus the weekly
+> backfill cron (Step 4) close this gap: the item lands in `External`, and the
+> next cron run creates the missing option and reassigns it. The only cost is up
+> to a week in the `External` bucket — add the option manually if you can't wait.
 
-You can skip seeding options entirely and let Step 3's `--create-missing-options`
-generate them from the issues already on the board.
+Apart from `External`, you can skip seeding options entirely and let Step 3's
+`--create-missing-options` generate them from the issues already on the board.
 
 ---
 
@@ -97,7 +105,9 @@ generate them from the issues already on the board.
 
 2. Add it as an **organization secret** named `PROJECTS_PAT`
    (Org → Settings → Secrets and variables → Actions → New organization secret).
-   Grant it to the repos whose issues land on the project.
+   Grant it to the repos whose issues land on the project, **plus the
+   [`freshabilityapp/.github`](https://github.com/freshabilityapp/.github) repo
+   itself** — the scheduled backfill (Step 4) runs there and reads this secret.
 
 An org secret means you add the token once, not once per repo — and rotation is a
 single edit.
@@ -150,6 +160,9 @@ Useful flags:
 
 **Verify:** open the project, group by `Author`. Every issue should be accounted for.
 
+This is the only manual run you should ever need — after Step 4, the scheduled
+workflow repeats it weekly (with `--create-missing-options --force`).
+
 ---
 
 ## Step 4 — Deploy the reusable workflow
@@ -158,10 +171,12 @@ The org's shared repo — [`freshabilityapp/.github`](https://github.com/freshab
 — exists and is **public**. This is GitHub's convention for org-wide defaults: shared
 workflows, issue templates, `CONTRIBUTING.md`, the org profile README.
 
-Commit `set-issue-author.yml` there at:
+Commit three files there:
 
 ```
-.github/workflows/set-issue-author.yml
+.github/workflows/set-issue-author.yml        # reusable event workflow
+.github/workflows/backfill-project-author.yml # weekly cron + workflow_dispatch
+scripts/backfill_project_author.py            # the script the cron runs
 ```
 
 Yes, the path doubles up — the *repo* is named `.github`, and workflows still live in
@@ -171,12 +186,24 @@ a `.github/workflows/` *directory* inside it. That's why callers reference
 ```bash
 git clone https://github.com/freshabilityapp/.github.git freshability-dotgithub
 cd freshability-dotgithub
-mkdir -p .github/workflows
-cp /path/to/set-issue-author.yml .github/workflows/
-git add .github/workflows/set-issue-author.yml
-git commit -m "Add reusable workflow: set Author field on project item"
+mkdir -p .github/workflows scripts
+cp /path/to/set-issue-author.yml /path/to/backfill-project-author.yml .github/workflows/
+cp /path/to/backfill_project_author.py scripts/
+git add .github/workflows scripts
+git commit -m "Add Author-field workflows: event-driven set + weekly backfill"
 git push origin main
 ```
+
+Before pushing, set the real project number in `backfill-project-author.yml`
+(the `--project` flag). The cron fires Mondays 06:17 UTC; adjust the schedule
+if weekly is too slow a ceiling for new-hire reassignment. You can also trigger
+it any time from the Actions tab (`workflow_dispatch`).
+
+> The cron runs with `--force`, which rewrites the Author on **every** item each
+> week — intentional, so items parked in `External` get reassigned once their
+> option exists, and any drift is repaired. The author of an issue never changes,
+> so this can only converge. Cost: one mutation per board item per run — fine for
+> boards of hundreds, revisit if it grows past that.
 
 Because the repo is **public**, no extra configuration is needed — any repo in the org
 can call the workflow. (Had it been private, you'd have to set
@@ -187,7 +214,9 @@ freshabilityapp organization"*, or every caller would fail with a misleading
 Publishing this file publicly is safe: it contains no credentials, only a *reference*
 to `secrets.PROJECTS_PAT`, which is resolved at run time from the calling repo.
 
-No caller exists yet, so nothing will run. This step just publishes the workflow.
+No caller exists yet, so the event workflow won't fire. The cron *will* start
+running on schedule — that's fine, it's the same idempotent backfill you already
+ran by hand in Step 3.
 
 ---
 
@@ -209,7 +238,7 @@ jobs:
       project-owner: freshabilityapp
       project-number: 1           # <-- your project number
       field-name: Author
-      # fallback-option: External # optional catch-all for unmapped logins
+      fallback-option: External   # catch-all; the weekly cron reassigns later
     secrets:
       projects-token: ${{ secrets.PROJECTS_PAT }}
 ```

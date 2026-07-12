@@ -17,6 +17,8 @@ jobs:
       project-owner: freshabilityapp
       project-number: 1           # <-- from the project URL
       field-name: Author
-      # fallback-option: External # optional: catch-all for unmapped logins
+      fallback-option: External   # catch-all for unmapped logins; the weekly
+                                  # backfill cron reassigns these to the real
+                                  # login once an option exists
     secrets:
       projects-token: ${{ secrets.PROJECTS_PAT }}   # org-level secret
