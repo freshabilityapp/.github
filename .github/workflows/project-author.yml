@@ -1,9 +1,10 @@
-# TEMPLATE — copy into EVERY repo whose issues land on the project, at:
+# Copy this file into EVERY repo whose issues land on the project, at:
 #   .github/workflows/project-author.yml
 #
-# It lives in scripts/ (not .github/workflows/) so it does not run in this
-# repo. This is the only file that needs to be copied around; all logic lives
-# in the reusable workflow (.github/workflows/set-issue-author.yml).
+# It is live in this repo too — issues opened here get the field set (and are
+# added to the board) like any other repo's. This is the only file that needs
+# to be copied around; all logic lives in the reusable workflow
+# (set-issue-author.yml, alongside this file).
 
 name: Project Created By field
 

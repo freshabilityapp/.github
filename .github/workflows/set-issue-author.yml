@@ -2,7 +2,7 @@
 # GitHub Project v2 item, working around the lack of a native author filter.
 # (The obvious name "Author" is a reserved field name in Projects v2.)
 #
-# Called by a thin caller workflow in each repo (template: scripts/project-author.yml).
+# Called by a thin caller workflow in each repo (copy of project-author.yml, alongside this file).
 
 name: Set Created By field on project item
 

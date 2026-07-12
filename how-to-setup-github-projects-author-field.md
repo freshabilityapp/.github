@@ -54,7 +54,7 @@ the org's shared repo (public):
 |---|---|
 | `.github/workflows/set-issue-author.yml` | Reusable event workflow — called by every repo |
 | `.github/workflows/backfill-project-author.yml` | Weekly cron + `workflow_dispatch` backfill |
-| `scripts/project-author.yml` | **Template** — copy to each repo as `.github/workflows/project-author.yml` (Step 5). Lives outside `.github/workflows/` so it doesn't run here |
+| `.github/workflows/project-author.yml` | Caller for **this repo's** issues, and the file to copy into each other repo (Step 5). Note: wherever it's installed, it also *adds* new issues to the board |
 | `scripts/backfill_project_author.py` | Backfill script (run by the cron; also runnable locally) |
 
 ---
@@ -214,8 +214,8 @@ a `.github/workflows/` *directory* inside it. That's why callers reference
 `freshabilityapp/.github/.github/workflows/set-issue-author.yml@main`.
 
 Before pushing, confirm the real project number in both
-`.github/workflows/backfill-project-author.yml` (the `--project` flag) and the
-`scripts/project-author.yml` template (`project-number`). The cron fires Mondays 06:17 UTC; adjust the schedule
+`.github/workflows/backfill-project-author.yml` (the `--project` flag) and
+`.github/workflows/project-author.yml` (`project-number`). The cron fires Mondays 06:17 UTC; adjust the schedule
 if weekly is too slow a ceiling for new-hire reassignment. You can also trigger
 it any time from the Actions tab (`workflow_dispatch`).
 
@@ -234,16 +234,20 @@ freshabilityapp organization"*, or every caller would fail with a misleading
 Publishing this file publicly is safe: it contains no credentials, only a *reference*
 to `secrets.PROJECTS_CREATED_BY_PAT`, which is resolved at run time from the calling repo.
 
-No caller exists yet, so the event workflow won't fire. The cron *will* start
-running on schedule — that's fine, it's the same idempotent backfill you already
-ran by hand in Step 3.
+Pushing this makes two things live immediately: the cron starts running on
+schedule (fine — it's the same idempotent backfill you already ran by hand in
+Step 3), and this repo's own `project-author.yml` starts handling issues opened
+here. Other repos stay uncovered until Step 5 wires them up.
 
 ---
 
 ## Step 5 — Wire up each repo
 
-In each repo whose issues land on the project, copy the template
-`scripts/project-author.yml` to `.github/workflows/project-author.yml`:
+In each repo whose issues land on the project, copy this repo's
+`.github/workflows/project-author.yml` into the same path there. (In this repo
+it's already live — issues opened here are covered.) Only install it in repos
+whose issues *belong* on the board: the workflow doesn't just set the field, it
+also **adds** the issue to the project if auto-add hasn't already.
 
 ```yaml
 name: Project Created By field
@@ -267,6 +271,30 @@ jobs:
 Roll out to **one repo first**. Open a throwaway issue, confirm the Created By
 field populates, then propagate.
 
+### What installing this in a repo does — and doesn't do
+
+- **Every new issue is added to the board.** On `opened` (however the issue is
+  created — repo UI, board UI, API, a bot), the workflow adds the issue to the
+  project and sets `Created By`. The same happens on `transferred` (issues moved
+  *into* the repo) and `reopened`. Visible on the board within ~30 seconds.
+- **Nothing happens retroactively.** Installing the workflow adds *zero*
+  existing issues — it only reacts to events from then on. Off-board issues
+  stay off the board (the backfill script doesn't add items either; it only
+  sets the field on items already on the board). An old issue drifts in only
+  if it's later reopened or transferred.
+- **The workflow must be on the repo's *default* branch to fire.** GitHub runs
+  `issues:`-triggered workflows from the default branch's copy only. Committed
+  to any other branch, it sits dormant with no error and no runs — check the
+  repo's default branch (it isn't always `main`; e.g. `app` uses `staging`).
+
+> **This behavior can be changed if desired.** Add-to-board is a deliberate
+> choice (see below), but if for some repo you want the field populated *only*
+> on issues someone intentionally placed on the board, the reusable workflow
+> can take an opt-in input (e.g. `add-to-board: false`) that looks up the
+> issue's existing project item and skips when there isn't one. Trade-off: the
+> lookup races with the project's built-in auto-add, so a just-auto-added issue
+> is occasionally missed — the weekly cron repairs it within a week.
+
 **Why `addProjectV2ItemById` and not a lookup:** on `issues: opened` there's a race
 between our workflow and the project's built-in auto-add. Reading `projectItems` can
 come back empty. `addProjectV2ItemById` is idempotent — it returns the existing item
@@ -284,6 +312,14 @@ if one is already there — so it sidesteps the race entirely.
 - [ ] Trigger `Backfill project Created By field` from the Actions tab
       (`workflow_dispatch`) → run succeeds; the `External` item from the previous
       check is reassigned to the real login (option auto-created)
+
+> **Don't want the value shown on every card?** Once populated, the field may
+> appear on board cards next to the labels. That's a per-view *display* setting,
+> not something the workflows control: in each view, **⚙ View** (or the **▾** on
+> the view tab) → **Fields** → uncheck `Created By`, then **Save** the view.
+> Filtering, grouping, and slicing by the field keep working while it's hidden —
+> visibility and filterability are independent. Check every existing view; views
+> created later won't show it unless someone adds it.
 
 ---
 
